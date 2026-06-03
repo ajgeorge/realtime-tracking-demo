@@ -2,7 +2,10 @@ import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { config } from './config';
 import { Hub } from './hub';
+import { RedisBridge } from './redis-bridge';
 import { parseClientMessage, LocationBroadcast, ServerMessage } from './protocol';
+
+const DRIVER_CHANNEL_PREFIX = 'driver:';
 
 interface ConnectionState {
   role?: 'driver' | 'watcher';
@@ -19,15 +22,24 @@ function sendError(ws: WebSocket, code: string, message: string): void {
 }
 
 export function createApp() {
-  // Single-node for now: location updates fan out to local watchers directly.
-  // The Redis bridge hooks into these callbacks next.
+  const bridge = new RedisBridge(config.redisUrl);
   const hub = new Hub(
     {
-      onFirstWatcher: () => {},
-      onLastWatcher: () => {},
+      // Subscribe on first local watcher, unsubscribe on last: Redis fan-out
+      // stays proportional to interest, not fleet size.
+      onFirstWatcher: (driverId) =>
+        void bridge.subscribe(`${DRIVER_CHANNEL_PREFIX}${driverId}`).catch(logRedisError),
+      onLastWatcher: (driverId) =>
+        void bridge.unsubscribe(`${DRIVER_CHANNEL_PREFIX}${driverId}`).catch(logRedisError),
     },
     config.maxBufferedBytes,
   );
+
+  bridge.onMessage((channel, message) => {
+    if (channel.startsWith(DRIVER_CHANNEL_PREFIX)) {
+      hub.deliverLocal(channel.slice(DRIVER_CHANNEL_PREFIX.length), message);
+    }
+  });
 
   const server = http.createServer((req, res) => {
     if (req.url === '/healthz') {
@@ -52,7 +64,9 @@ export function createApp() {
     const state: ConnectionState = { watched: new Set() };
 
     ws.on('message', (data) => {
-      handleMessage(ws, state, data.toString());
+      void handleMessage(ws, state, data.toString()).catch(() => {
+        sendError(ws, 'internal', 'failed to process message');
+      });
     });
 
     ws.on('close', () => {
@@ -60,7 +74,7 @@ export function createApp() {
     });
   });
 
-  function handleMessage(ws: WebSocket, state: ConnectionState, raw: string): void {
+  async function handleMessage(ws: WebSocket, state: ConnectionState, raw: string): Promise<void> {
     const parsed = parseClientMessage(raw);
     if (!parsed.ok) {
       sendError(ws, 'bad_message', parsed.error);
@@ -93,7 +107,9 @@ export function createApp() {
           driverId: state.driverId,
           via: config.nodeId,
         };
-        hub.deliverLocal(state.driverId, JSON.stringify(broadcast));
+        // Always publish through Redis — even for watchers on this node —
+        // so there is exactly one delivery path.
+        await bridge.publish(`${DRIVER_CHANNEL_PREFIX}${state.driverId}`, JSON.stringify(broadcast));
         return;
       }
 
@@ -115,7 +131,18 @@ export function createApp() {
     }
   }
 
-  return { server, wss, hub };
+  function logRedisError(err: unknown): void {
+    console.error(`[${config.nodeId}] redis error:`, err);
+  }
+
+  async function stop(): Promise<void> {
+    for (const client of wss.clients) client.terminate();
+    await new Promise<void>((resolve) => wss.close(() => resolve()));
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await bridge.close();
+  }
+
+  return { server, wss, hub, bridge, stop };
 }
 
 if (require.main === module) {
@@ -123,4 +150,9 @@ if (require.main === module) {
   app.server.listen(config.port, () => {
     console.log(`[${config.nodeId}] listening on :${config.port}`);
   });
+  const shutdown = () => {
+    void app.stop().finally(() => process.exit(0));
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
