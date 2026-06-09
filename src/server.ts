@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { config } from './config';
 import { Hub } from './hub';
 import { RedisBridge } from './redis-bridge';
+import { startReaper, trackLiveness } from './heartbeat';
 import { parseClientMessage, LocationBroadcast, ServerMessage } from './protocol';
 
 const DRIVER_CHANNEL_PREFIX = 'driver:';
@@ -59,8 +60,10 @@ export function createApp() {
   });
 
   const wss = new WebSocketServer({ server, path: '/ws' });
+  const stopReaper = startReaper(wss, config.heartbeatIntervalMs);
 
   wss.on('connection', (ws) => {
+    trackLiveness(ws);
     const state: ConnectionState = { watched: new Set() };
 
     ws.on('message', (data) => {
@@ -136,6 +139,7 @@ export function createApp() {
   }
 
   async function stop(): Promise<void> {
+    stopReaper();
     for (const client of wss.clients) client.terminate();
     await new Promise<void>((resolve) => wss.close(() => resolve()));
     await new Promise<void>((resolve) => server.close(() => resolve()));
