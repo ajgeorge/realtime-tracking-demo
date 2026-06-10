@@ -6,7 +6,17 @@
  */
 import WebSocket, { ClientOptions } from 'ws';
 import Redis from 'ioredis';
-import { API_1, API_2, REDIS_URL, auth, eventually, nextMessage, send, wsConnect } from './helpers';
+import {
+  API_1,
+  API_2,
+  REDIS_URL,
+  auth,
+  closed,
+  eventually,
+  nextMessage,
+  send,
+  wsConnect,
+} from './helpers';
 
 jest.setTimeout(60_000);
 
@@ -80,4 +90,12 @@ describe('cross-server delivery', () => {
     send(ws, { type: 'location', payload: LOC, seq: 1, ts: Date.now() });
     expect((await error).payload.code).toBe('not_a_driver');
   });
+
+  it('reaper terminates a client that stops answering pings', async () => {
+    // autoPong: false simulates a wedged client: TCP is up, but the WS stack
+    // is unresponsive. The server must notice within ~2 heartbeat intervals.
+    const ws = await connect(API_1, { autoPong: false });
+    await auth(ws, { role: 'watcher' });
+    await closed(ws, 35_000); // 15s interval → dead by ~30s
+  }, 45_000);
 });
