@@ -3,6 +3,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { config } from './config';
 import { Hub } from './hub';
 import { RedisBridge } from './redis-bridge';
+import { Presence, PRESENCE_CHANNEL } from './presence';
 import { startReaper, trackLiveness } from './heartbeat';
 import { parseClientMessage, LocationBroadcast, ServerMessage } from './protocol';
 
@@ -36,9 +37,21 @@ export function createApp() {
     config.maxBufferedBytes,
   );
 
+  const presence = new Presence(bridge.commands, bridge, config.nodeId, config.presenceTtlSec);
+
+  // Presence flips are low-volume, so every node stays subscribed permanently.
+  void bridge.subscribe(PRESENCE_CHANNEL).catch(logRedisError);
+
   bridge.onMessage((channel, message) => {
     if (channel.startsWith(DRIVER_CHANNEL_PREFIX)) {
       hub.deliverLocal(channel.slice(DRIVER_CHANNEL_PREFIX.length), message);
+    } else if (channel === PRESENCE_CHANNEL) {
+      try {
+        const parsed = JSON.parse(message) as { payload: { driverId: string } };
+        hub.deliverLocal(parsed.payload.driverId, message);
+      } catch {
+        /* malformed presence frame — drop it */
+      }
     }
   });
 
@@ -61,6 +74,7 @@ export function createApp() {
 
   const wss = new WebSocketServer({ server, path: '/ws' });
   const stopReaper = startReaper(wss, config.heartbeatIntervalMs);
+  presence.start(Math.min(config.heartbeatIntervalMs, 10_000));
 
   wss.on('connection', (ws) => {
     trackLiveness(ws);
@@ -113,6 +127,7 @@ export function createApp() {
         // Always publish through Redis — even for watchers on this node —
         // so there is exactly one delivery path.
         await bridge.publish(`${DRIVER_CHANNEL_PREFIX}${state.driverId}`, JSON.stringify(broadcast));
+        await presence.touch(state.driverId);
         return;
       }
 
@@ -123,6 +138,13 @@ export function createApp() {
         }
         state.watched.add(msg.payload.driverId);
         hub.watch(msg.payload.driverId, ws);
+        // Tell the new watcher the current status immediately instead of
+        // making them wait for the next flip.
+        const online = await presence.isOnline(msg.payload.driverId);
+        send(ws, {
+          type: 'presence',
+          payload: { driverId: msg.payload.driverId, status: online ? 'online' : 'offline' },
+        });
         return;
       }
 
@@ -140,6 +162,7 @@ export function createApp() {
 
   async function stop(): Promise<void> {
     stopReaper();
+    presence.stop();
     for (const client of wss.clients) client.terminate();
     await new Promise<void>((resolve) => wss.close(() => resolve()));
     await new Promise<void>((resolve) => server.close(() => resolve()));
