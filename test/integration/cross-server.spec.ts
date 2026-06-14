@@ -33,8 +33,6 @@ afterEach(() => {
   for (const ws of sockets.splice(0)) ws.terminate();
 });
 
-const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 describe('cross-server delivery', () => {
   it('update from driver on node A reaches watcher on node B', async () => {
     const driver = await connect(API_1);
@@ -46,7 +44,7 @@ describe('cross-server delivery', () => {
     expect(watcherAuth.payload.nodeId).toBe('api-2');
 
     send(watcher, { type: 'watch', payload: { driverId: 't-cross' } });
-    await settle(500); // let api-2's SUBSCRIBE land before the driver publishes
+    await nextMessage(watcher, 'presence'); // initial status ack — watch is registered
 
     const incoming = nextMessage<{ driverId: string; via: string; seq: number }>(
       watcher,
@@ -58,6 +56,25 @@ describe('cross-server delivery', () => {
     expect(msg.driverId).toBe('t-cross');
     expect(msg.seq).toBe(1);
     expect(msg.via).toBe('api-1'); // handled by the OTHER node → cross-server proven
+  });
+
+  it('watcher gets a presence online flip when the driver starts publishing', async () => {
+    const watcher = await connect(API_1);
+    await auth(watcher, { role: 'watcher' });
+    send(watcher, { type: 'watch', payload: { driverId: 't-presence' } });
+    const initial = await nextMessage<{ payload: { status: string } }>(watcher, 'presence');
+    expect(initial.payload.status).toBe('offline');
+
+    const flip = nextMessage<{ payload: { driverId: string; status: string } }>(
+      watcher,
+      'presence',
+    );
+    const driver = await connect(API_2);
+    await auth(driver, { role: 'driver', driverId: 't-presence' });
+    send(driver, { type: 'location', payload: LOC, seq: 1, ts: Date.now() });
+
+    const msg = await flip;
+    expect(msg.payload).toEqual({ driverId: 't-presence', status: 'online' });
   });
 
   it('unsubscribes from the Redis channel when the last watcher leaves', async () => {
