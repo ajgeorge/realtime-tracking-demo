@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>realtime-tracking-demo</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { height: 100%; width: 100%; font-family: system-ui, sans-serif; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; z-index: 1000;
+      background: rgba(255, 255, 255, 0.96); border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25); padding: 14px 16px;
+      width: 240px;
+    }
+    #panel h1 { font-size: 15px; margin-bottom: 8px; }
+    #status {
+      display: inline-block; font-size: 12px; padding: 2px 10px;
+      border-radius: 999px; color: #fff; margin-bottom: 10px;
+    }
+    #status.connected { background: #1a9c4b; }
+    #status.connecting { background: #d99114; }
+    #status.disconnected { background: #c43333; }
+    #drivers { list-style: none; }
+    #drivers li {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    }
+    #drivers li:hover { background: #eef2f5; }
+    #drivers li.watching { background: #e2f0ff; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #bbb; flex: none; }
+    .dot.online { background: #1a9c4b; }
+    .via {
+      margin-left: auto; font-size: 10px; font-family: ui-monospace, monospace;
+      padding: 1px 6px; border-radius: 4px; color: #fff;
+    }
+    .via.api-1 { background: #3567c4; }
+    .via.api-2 { background: #8a4bc9; }
+    #hint { font-size: 11px; color: #777; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <h1>realtime-tracking-demo</h1>
+    <span id="status" class="connecting">connecting…</span>
+    <ul id="drivers"></ul>
+    <div id="hint">Click a driver to watch. The badge shows which API node handled each update — cross-server delivery, live.</div>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

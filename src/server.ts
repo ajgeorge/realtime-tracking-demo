@@ -28,7 +28,7 @@ export function createApp() {
   const hub = new Hub(
     {
       // Subscribe on first local watcher, unsubscribe on last: Redis fan-out
-      // stays proportional to interest, not fleet size.
+      // stays proportional to interest, not fleet size (see ADR 0003).
       onFirstWatcher: (driverId) =>
         void bridge.subscribe(`${DRIVER_CHANNEL_PREFIX}${driverId}`).catch(logRedisError),
       onLastWatcher: (driverId) =>
@@ -36,7 +36,6 @@ export function createApp() {
     },
     config.maxBufferedBytes,
   );
-
   const presence = new Presence(bridge.commands, bridge, config.nodeId, config.presenceTtlSec);
 
   // Presence flips are low-volume, so every node stays subscribed permanently.
@@ -66,6 +65,19 @@ export function createApp() {
           rssBytes: process.memoryUsage().rss,
         }),
       );
+      return;
+    }
+    if (req.url === '/drivers') {
+      presence
+        .listOnline()
+        .then((drivers) => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ drivers }));
+        })
+        .catch(() => {
+          res.writeHead(503, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'redis unavailable' }));
+        });
       return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
@@ -124,8 +136,9 @@ export function createApp() {
           driverId: state.driverId,
           via: config.nodeId,
         };
-        // Always publish through Redis — even for watchers on this node —
-        // so there is exactly one delivery path.
+        // Always publish through Redis — even watchers on *this* node get the
+        // update via the subscription. One code path, consistent ordering,
+        // at the cost of a Redis round-trip (see ADR 0002).
         await bridge.publish(`${DRIVER_CHANNEL_PREFIX}${state.driverId}`, JSON.stringify(broadcast));
         await presence.touch(state.driverId);
         return;
@@ -169,7 +182,7 @@ export function createApp() {
     await bridge.close();
   }
 
-  return { server, wss, hub, bridge, stop };
+  return { server, wss, hub, bridge, presence, stop };
 }
 
 if (require.main === module) {
