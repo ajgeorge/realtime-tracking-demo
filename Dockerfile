@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
+COPY simulator ./simulator
 RUN npm run build
 
 FROM node:22-alpine

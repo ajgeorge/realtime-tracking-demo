@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest --selectProjects unit",
     "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration --runInBand"
+    "test:integration": "jest --selectProjects integration --runInBand",
+    "simulate": "tsx simulator/drive.ts"
   },
   "dependencies": {
     "ioredis": "^5.4.1",

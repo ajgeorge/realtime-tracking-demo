@@ -55,3 +55,14 @@ services:
         condition: service_healthy
       api-2:
         condition: service_healthy
+
+  simulator:
+    build: .
+    command: ["node", "dist/simulator/drive.js"]
+    environment:
+      WS_URL: ws://nginx:8080/ws
+      DRIVERS: "5"
+      UPDATE_HZ: "2"
+    depends_on:
+      - nginx
+    restart: unless-stopped
