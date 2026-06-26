@@ -15,7 +15,8 @@
     "test": "jest --selectProjects unit",
     "test:unit": "jest --selectProjects unit",
     "test:integration": "jest --selectProjects integration --runInBand",
-    "simulate": "tsx simulator/drive.ts"
+    "simulate": "tsx simulator/drive.ts",
+    "bench": "tsx bench/sockets-bench.ts"
   },
   "dependencies": {
     "ioredis": "^5.4.1",
