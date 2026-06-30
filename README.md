@@ -124,13 +124,26 @@ channel subscriptions appear/disappear with watcher interest (asserted via
 One driver publishing at 2 Hz, N watchers all subscribed to it — the worst
 case for fan-out, since every frame becomes N sends on one hot channel:
 
+| watchers | ramp time | delivery | p50 | p95 | p99 | RSS api-1 / api-2 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1,000 | 3.4 s | 100% | 27 ms | 70 ms | 93 ms | 82 / 87 MB |
+| 5,000 | 15.0 s | 100% | 122 ms | 223 ms | 247 ms | 98 / 102 MB |
+| 10,000 | 28.0 s | 97.5% | 155 ms | 283 ms | 324 ms | 124 / 129 MB |
+
+Honest numbers from a dev machine (Docker Desktop, bench client running as a
+container inside the compose network), not a load lab. At 10k the missing
+2.5% is the backpressure policy working as designed — plus the bench process
+itself becoming a bottleneck parsing 20k messages/sec. Run yours:
+
 ```sh
 docker compose run --rm --no-deps simulator \
   node dist/bench/sockets-bench.js --watchers 5000 --duration 20 \
   --url ws://nginx:8080/ws --rss "http://api-1:3000/healthz,http://api-2:3000/healthz"
 ```
 
-Measured numbers from proper 1k/5k/10k runs land here shortly.
+(From the host, `npm run bench -- --watchers 500` works too, but on
+Docker Desktop the Windows→VM port proxy throttles the connection ramp long
+before the servers do — measure from inside the network.)
 
 **What changes at 100k sockets?** This design's ceiling and the next moves:
 shard hot driver channels; move fan-out off the API nodes (NATS or Redis
