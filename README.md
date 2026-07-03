@@ -14,6 +14,10 @@ A single-server WebSocket demo is a tutorial. A multi-instance one is an
 architecture: no sticky sessions, no node knows where anyone else is
 connected, and killing either API node mid-stream is a non-event.
 
+Hosted: backend on Railway (nginx + 2 API nodes + Redis, over Railway's
+private network), map on Cloudflare Pages — see
+[docs/deploy.md](docs/deploy.md) for the exact setup.
+
 ## Quick start
 
 ```sh

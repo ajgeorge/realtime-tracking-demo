@@ -1,0 +1,36 @@
+upstream api {
+  # least_conn, NOT sticky sessions — the whole architecture exists so that
+  # stickiness is unnecessary. Any watcher on any node hears any driver.
+  least_conn;
+  server ${UPSTREAM_API_1};
+  server ${UPSTREAM_API_2};
+}
+
+server {
+  listen ${LISTEN_PORT};
+
+  location /ws {
+    proxy_pass http://api;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    # Must exceed the server's 15s heartbeat interval: nginx severs upstream
+    # connections idle for proxy_read_timeout, and the server's pings (plus
+    # client pongs) are exactly the traffic that resets it. 60s gives ~4
+    # missed-ping margin before nginx would kill a healthy-but-quiet socket.
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+  }
+
+  location /drivers {
+    proxy_pass http://api;
+    # Frontend and edge are deliberately different origins (Cloudflare Pages
+    # vs Railway) — this route is public, read-only, unauthenticated.
+    add_header Access-Control-Allow-Origin * always;
+  }
+
+  location / {
+    root /usr/share/nginx/html;
+    index index.html;
+  }
+}

@@ -36,3 +36,39 @@ jobs:
       - name: teardown
         if: always()
         run: docker compose down -v
+
+  # Backend: 4 Railway services in one project (api-1, api-2, edge, simulator)
+  # sharing this repo's Dockerfile/Dockerfile.edge, wired by Railway's private
+  # network (see docs/deploy.md). RAILWAY_TOKEN must be a *Project Token*
+  # (Railway dashboard → project → Settings → Tokens) so `railway up` can
+  # target each service without a separate `railway link` step.
+  deploy-railway:
+    needs: [unit, integration]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm i -g @railway/cli
+      - name: Deploy api-1, api-2, edge, simulator
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up --service api-1 --detach
+          railway up --service api-2 --detach
+          railway up --service edge --detach
+          railway up --service simulator --detach
+
+  # Frontend: static client/ on Cloudflare Pages. Needs CLOUDFLARE_API_TOKEN
+  # (Pages:Edit permission) and CLOUDFLARE_ACCOUNT_ID as repo secrets, and a
+  # Pages project already created with this name.
+  deploy-cloudflare-pages:
+    needs: [unit, integration]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy client --project-name=realtime-tracking-demo

@@ -1,0 +1,12 @@
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx/templates/default.conf.template /etc/nginx/templates/default.conf.template
+COPY nginx/placeholder.html /usr/share/nginx/html/index.html
+
+# Defaults target Railway's private network; docker-compose overrides these
+# via environment: to the compose service names (see docker-compose.yml).
+ENV UPSTREAM_API_1=api-1.railway.internal:3000 \
+    UPSTREAM_API_2=api-2.railway.internal:3000 \
+    LISTEN_PORT=8080
+
+EXPOSE 8080

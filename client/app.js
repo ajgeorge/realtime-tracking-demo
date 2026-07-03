@@ -11,6 +11,13 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 const COLORS = ['#3567c4', '#c43333', '#1a9c4b', '#d99114', '#8a4bc9', '#0e8a8a'];
 const TRAIL_LENGTH = 60;
 
+// Cross-origin deploy (Cloudflare Pages → Railway edge) vs same-origin local
+// dev (docker compose serves both from :8080) — see config.js.
+const API_HOST = window.API_BASE || location.host;
+const SECURE = window.API_BASE ? true : location.protocol === 'https:';
+const WS_PROTO = SECURE ? 'wss' : 'ws';
+const HTTP_PROTO = SECURE ? 'https' : 'http';
+
 // --- state ----------------------------------------------------------------
 const drivers = new Map(); // id -> { online, watching, marker, trail, lastSeq, via, el }
 let ws = null;
@@ -75,8 +82,7 @@ function toggleWatch(id) {
 // --- websocket with reconnect + backoff ------------------------------------
 function connect() {
   setStatus('connecting', attempts ? `reconnecting (try ${attempts + 1})…` : 'connecting…');
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = new WebSocket(`${WS_PROTO}://${API_HOST}/ws`);
 
   ws.onopen = () => {
     attempts = 0;
@@ -156,7 +162,7 @@ function handlePresence(msg) {
 // --- driver discovery -------------------------------------------------------
 async function refreshDrivers() {
   try {
-    const res = await fetch('/drivers');
+    const res = await fetch(`${HTTP_PROTO}://${API_HOST}/drivers`);
     if (!res.ok) return;
     const body = await res.json();
     for (const id of body.drivers) {
